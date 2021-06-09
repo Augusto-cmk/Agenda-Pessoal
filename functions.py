@@ -2222,7 +2222,7 @@ def listaTxt(Lista):
 
 def retornaNome(mes):
     meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto',
-    'Setembro','Novembro','Dezembro']
+    'Setembro','Outubro','Novembro','Dezembro']
     return meses[mes]
 
 def diasSemana():
