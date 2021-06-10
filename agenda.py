@@ -1,10 +1,12 @@
 from datetime import datetime
 
 class Agenda:
-    def __init__(self,login,senha):
+    def __init__(self,login,senha,email,flag_notificacao):
         self.lista_de_compromisso = []
         self.login = login
         self.senha = senha
+        self.email = email
+        self.notificacao = flag_notificacao
 
     def obterLogin(self):
         return self.login

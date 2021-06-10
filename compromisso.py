@@ -9,12 +9,12 @@ class Compromisso:
         descricao = self.descricao
         if len(self.descricao) > 34:
             i = 0
-            quebra_linha = 30
+            quebra_linha = 40
             for caractere in self.descricao:
                 if i == quebra_linha and caractere ==' ':
                     descricao = descricao[:i+1] + '\n' + descricao[i+1:]
                     if len(self.descricao) > quebra_linha:
-                        quebra_linha = quebra_linha + 30
+                        quebra_linha = quebra_linha + 40
                     else:
                         break
 
@@ -61,3 +61,30 @@ class Compromisso:
     
     def alteraDescricao(self,descricao):
         self.descricao = descricao
+    
+    def alteraDia(self,Dia):
+        mes = self.data[3:5]
+        ano = self.data[-4:]
+
+        if int(Dia) < 10:
+            Dia = '0' + str(Dia)
+
+        if int(Dia) >= 10:
+            Dia = str(Dia)
+
+        data_out = Dia + '/' + mes + '/' + ano
+        self.data = data_out
+    
+    def alteraMes(self,Mes):
+        dia = self.data[0:2]
+        ano = self.data[-4:]
+
+        if int(Mes) < 10:
+            Mes = '0' + str(Mes)
+
+        if int(Mes) >= 10:
+            Mes = str(Mes)
+
+        data_out = dia + '/' + Mes + '/' + ano
+        self.data = data_out
+

@@ -2,6 +2,11 @@ from PySimpleGUI import PySimpleGUI as simple
 from agenda import Agenda
 from compromisso import Compromisso
 from datetime import datetime
+from datetime import date
+import calendar
+from send import envioEmail
+from Jarvis import Falar
+from Jarvis import Ouvir
 
 class assistente:
     
@@ -12,43 +17,95 @@ class assistente:
         self.layout = layout
         self.agendas = agendas
     
-    def telaAssistente(self,metodo):
+    def telaAssistente(self,metodo,notificar):
         simple.theme('Reddit')
         data = datetime.now()
-        data_print = data.strftime('%d/%m/%Y às %H:%M')
+        horario_print = data.strftime('%H:%M')
+        data_print = data.strftime('%d/%m/%Y')
         metodo = 'Padrao'
-
         self.layout = [
             [simple.Text(f'Bem vindo(a) {self.agenda.login}, selecione o filtro para visualização dos compromissos.')],
-            [simple.Text(f'Horário:')],
-            [simple.Text(f'{data_print}')],
-            [simple.Button('Ano'),simple.Button('Mês'),simple.Button('Semana'),simple.Button('Dia')],
-            [simple.Button('Sair')]
+            [simple.Text(f'Horário:{horario_print}')],
+            [simple.Text(f'Data: {data_print}')],
+            [simple.Button('Ano'),simple.Button('Mês'),simple.Button('Semana'),simple.Button('Dia'),simple.Button('Informações adicionais')],
+            [simple.Button('Sair'),simple.ButtonMenu('Configuração de notificações',[['Não serve para nada'],['Habilitar notificação de login','Desabilitar notificação de login']],key='Notificar')]
         ]
         
         self.janela = simple.Window('Agenda',self.layout,resizable=True)
 
+        if self.agenda.notificacao == 'enable' and notificar == 0:
+            compromissos = self.agenda.filtroDia()
+            if len(compromissos) > 1:
+                txtComp = mostraCompromissosEmail(compromissos)
+                envioEmail(self.agenda.email,'Compromissos do dia',txtComp)
+                Falar(f'Você tem um total de {len(compromissos)} compromissos para hoje')
+                Falar("Mais detalhes na opção 'dia' de sua agenda, ou em seu e-mail")
+                notificar = 1
+
+            if len(compromissos) == 1:
+                txtComp = mostraCompromissosEmail(compromissos)
+                envioEmail(self.agenda.email,'Compromissos do dia',txtComp)
+                Falar(f'Você tem um total de {len(compromissos)} compromisso para hoje')
+                Falar("Mais detalhes na opção 'dia' de sua agenda, ou em seu e-mail")
+                notificar = 1
+
+            if len(compromissos) == 0:
+                Falar('Você não possui compromissos para hoje')
+                notificar = 1
+        i = 0
         while True:
             eventos,valores = self.janela.read()
+
+
             if eventos == simple.WINDOW_CLOSED:
                 break
+
+            if eventos == 'Informações adicionais':
+                if self.agenda.notificacao == 'disable':
+                    Falar('Essa opção só irá funcionar se estiver com a função de notificação ativada em sua agenda')
+                if self.agenda.notificacao == 'enable':
+                    if i == 0:
+                        Falar('Se quiser saber os compromissos da próxima semana, diga o comando "saber mais" quando eu pedir')
+                    comando = Ouvir()
+                    if comando == 'saber mais':
+                        txtProximaSemana = compromissosProximaSemana(self.agenda)
+                        if txtProximaSemana != '':
+                            Falar('Estou te enviando um e-mail com os compromissos da próxima semana')
+                            envioEmail(self.agenda.email,'Compromissos da proxima semana',txtProximaSemana)
+                        else:
+                            Falar('Você não possui compromissos para a próxima semana')
+                        i = 0
+                    else:
+                        Falar('Não consegui te ouvir, tente novamente')
+                        i = 1
+            
+            if eventos == 'Notificar':
+                if valores['Notificar'] == 'Habilitar notificação de login':
+                    self.agenda.notificacao = 'enable'
+                    Falar('Você ativou a função de notificação de sua agenda. Ao logar, você irá receber um e-mail com os compromissos do dia')
+                    Falar('Para que a função de notificação de sua agenda funcione corretamente, você precisa configurar o outlook em seu computador')
+                if valores['Notificar'] == 'Desabilitar notificação de login':
+                    Falar('Você desativou a função de notificação de sua agenda e não receberá mais e-mails')
+                    self.agenda.notificacao = 'disable'
+
             if eventos == 'Ano':
                 filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                filtro.ano()
+                filtro.ano(notificar)
                 break
             if eventos == 'Mês':
                 filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                filtro.mes()
+                filtro.mes(notificar)
                 break
             if eventos == 'Dia':
                 filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                filtro.dia(data.day,metodo)
+                filtro.dia(data.day,metodo,notificar)
                 break
 
             if eventos == 'Sair':
+                descarregaDados(self.agendas)
                 cadastro = Cadastro(self.agendas,self.agenda,self.listaCompromissos)
                 self.janela.close()
                 cadastro.Login()
@@ -57,7 +114,7 @@ class assistente:
             if eventos == 'Semana':
                 filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                filtro.semana()
+                filtro.semana(notificar)
                 break
 
 class filtroData:
@@ -69,7 +126,7 @@ class filtroData:
         self.layout = layout
         self.agendas = agendas
     
-    def ano(self):
+    def ano(self,notificar):
         simple.theme('Reddit')
 
         compromissos_do_ano = self.agenda.filtroAno()
@@ -103,25 +160,25 @@ class filtroData:
             if eventos == 'Alterar compromisso':
                 altera = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                altera.alteraCompromisso(periodo = 'Ano',dia = 'Ano',metodo = 'Ano')
+                altera.alteraCompromisso(periodo = 'Ano',dia = 'Ano',metodo = 'Ano',notificar=notificar)
                 break
             if eventos == 'Adicionar compromisso':
                 alterar = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                alterar.criaCompromisso(dia = 'Ano',metodo = 'Ano',periodo = 'Ano')
+                alterar.criaCompromisso(dia = 'Ano',metodo = 'Ano',periodo = 'Ano',notificar=notificar)
                 break
             if eventos == 'Excluir compromisso':
                 alterar = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                alterar.ExcluirCompromisso(dia ='Ano',metodo = 'Ano',periodo = 'Ano')
+                alterar.ExcluirCompromisso(dia ='Ano',metodo = 'Ano',periodo = 'Ano',notificar=notificar)
                 break
             if eventos == 'Voltar':
                 assistent = assistente(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                assistent.telaAssistente(metodo = 'ano')
+                assistent.telaAssistente(metodo = 'ano',notificar=notificar)
                 break
 
-    def mes(self):
+    def mes(self,notificar):
         simple.theme('Reddit')
 
         compromissos_do_mes = self.agenda.filtroMes()
@@ -158,25 +215,25 @@ class filtroData:
             if eventos == 'Alterar compromisso':
                 altera = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                altera.alteraCompromisso(dia = 'Mes',metodo ='Mes',periodo = 'Mes')
+                altera.alteraCompromisso(dia = 'Mes',metodo ='Mes',periodo = 'Mes',notificar = notificar)
                 break
             if eventos == 'Adicionar compromisso':
                 alterar = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                alterar.criaCompromisso(dia ='Mes',metodo ='Mes',periodo = 'Mes')
+                alterar.criaCompromisso(dia ='Mes',metodo ='Mes',periodo = 'Mes',notificar=notificar)
                 break
             if eventos == 'Excluir compromisso':
                 alterar = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                alterar.ExcluirCompromisso(dia='Mes',metodo = 'Mes',periodo = 'Mes')
+                alterar.ExcluirCompromisso(dia='Mes',metodo = 'Mes',periodo = 'Mes',notificar=notificar)
                 break
             if eventos == 'Voltar':
                 assistent = assistente(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                assistent.telaAssistente(metodo ='Mes')
+                assistent.telaAssistente(metodo ='Mes',notificar=notificar)
                 break
 
-    def dia(self,dia,metodo):
+    def dia(self,dia,metodo,notificar):
         if metodo == 'Padrao':
             simple.theme('Reddit')
 
@@ -208,22 +265,22 @@ class filtroData:
                 if eventos == 'Alterar compromisso':
                     altera = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    altera.alteraCompromisso('Dia',dia,metodo)
+                    altera.alteraCompromisso('Dia',dia,metodo,notificar)
                     break
                 if eventos == 'Adicionar compromisso':
                     alterar = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    alterar.criaCompromisso('Dia',dia,metodo)
+                    alterar.criaCompromisso('Dia',dia,metodo,notificar=1)
                     break
                 if eventos == 'Excluir compromisso':
                     alterar = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    alterar.ExcluirCompromisso('Dia',dia,metodo)
+                    alterar.ExcluirCompromisso('Dia',dia,metodo,notificar=1)
                     break
                 if eventos == 'Voltar':
                     assistent = assistente(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    assistent.telaAssistente(metodo)
+                    assistent.telaAssistente(metodo,notificar)
                     break
         if metodo == 'Semana':
             simple.theme('Reddit')
@@ -256,25 +313,25 @@ class filtroData:
                 if eventos == 'Alterar compromisso':
                     altera = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    altera.alteraCompromisso('Dia',dia,metodo)
+                    altera.alteraCompromisso('Dia',dia,metodo,notificar)
                     break
                 if eventos == 'Adicionar compromisso':
                     alterar = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    alterar.criaCompromisso('Dia',dia,metodo)
+                    alterar.criaCompromisso('Dia',dia,metodo,notificar=1)
                     break
                 if eventos == 'Excluir compromisso':
                     alterar = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    alterar.ExcluirCompromisso('Dia',dia,metodo)
+                    alterar.ExcluirCompromisso('Dia',dia,metodo,notificar=1)
                     break
                 if eventos == 'Voltar':
                     filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    filtro.semana()
+                    filtro.semana(notificar)
                     break
 
-    def diaSemana(self,dia):
+    def diaSemana(self,dia,notificar):
         simple.theme('Reddit')
 
         compromissos_do_dia = self.agenda.filtroDiaSemana(dia)
@@ -307,26 +364,26 @@ class filtroData:
             if eventos == 'Alterar compromisso':
                 altera = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                altera.alteraCompromisso('Dia',dia,metodo)
+                altera.alteraCompromisso('Dia',dia,metodo,notificar)
                 break
 
             if eventos == 'Adicionar compromisso':
                 alterar = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                alterar.criaCompromisso('Dia',dia,metodo)
+                alterar.criaCompromisso('Dia',dia,metodo,notificar=1)
                 break
             if eventos == 'Excluir compromisso':
                 alterar = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                alterar.ExcluirCompromisso('Dia',dia,metodo)
+                alterar.ExcluirCompromisso('Dia',dia,metodo,notificar=1)
                 break
             if eventos == 'Voltar':
                 filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                filtro.semana()
+                filtro.semana(notificar)
                 break
     
-    def semana(self):
+    def semana(self,notificar):
         simple.theme('Reddit')
 
         dias = diasSemana()
@@ -350,50 +407,50 @@ class filtroData:
             if eventos == 'Segunda':
                 filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                filtro.diaSemana(dias[0])
+                filtro.diaSemana(dias[0],notificar)
                 break
 
             if eventos == 'Terça':
                 filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                filtro.diaSemana(dias[1])
+                filtro.diaSemana(dias[1],notificar)
                 break
 
             if eventos == 'Quarta':
                 filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                filtro.diaSemana(dias[2])
+                filtro.diaSemana(dias[2],notificar)
                 break
 
             if eventos == 'Quinta':
                 filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                filtro.diaSemana(dias[3])
+                filtro.diaSemana(dias[3],notificar)
                 break
             
             if eventos == 'Sexta':
                 filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                filtro.diaSemana(dias[4])
+                filtro.diaSemana(dias[4],notificar)
                 break
             
             if eventos == 'Sábado':
                 filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                filtro.diaSemana(dias[5])
+                filtro.diaSemana(dias[5],notificar)
                 break
             
             if eventos == 'Domingo':
                 filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                filtro.diaSemana(dias[6])
+                filtro.diaSemana(dias[6],notificar)
                 break
 
 
             if eventos == 'Voltar':
                 assistent = assistente(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 self.janela.close()
-                assistent.telaAssistente(metodo)
+                assistent.telaAssistente(metodo,notificar)
                 break
 
 class TelaError:
@@ -444,7 +501,7 @@ class TelaError:
                 cadastro.newAgenda()
                 break
 
-    def errorNotFind(self,periodo,dia,metodo):
+    def errorNotFind(self,periodo,dia,metodo,notificar):
         simple.theme('Reddit')
 
         self.layout = [
@@ -462,11 +519,11 @@ class TelaError:
                 self.janela.close()
                 filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                 if periodo == 'Ano':
-                    filtro.ano()
+                    filtro.ano(notificar)
                 if periodo == 'Mes':
-                    filtro.mes()
+                    filtro.mes(notificar)
                 if periodo == 'Dia':
-                    filtro.dia(dia,metodo)
+                    filtro.dia(dia,metodo,notificar)
                 break
     
     def errorLoginExistente(self):
@@ -489,7 +546,7 @@ class TelaError:
                 cadastro.newAgenda()
                 break
     
-    def errorCompromissoExistente(self,periodo,dia,metodo):
+    def errorCompromissoExistente(self,periodo,dia,metodo,notificar):
         if periodo == 'Ano':
             simple.theme('Reddit')
 
@@ -507,7 +564,7 @@ class TelaError:
                 if eventos == 'Tentar novamente':
                     self.janela.close()
                     filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
-                    filtro.ano()
+                    filtro.ano(notificar)
                     break
         
         if periodo == 'Mes':
@@ -527,7 +584,7 @@ class TelaError:
                 if eventos == 'Tentar novamente':
                     self.janela.close()
                     filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
-                    filtro.mes()
+                    filtro.mes(notificar)
                     break
 
         if periodo == 'Dia':
@@ -547,10 +604,10 @@ class TelaError:
                 if eventos == 'Tentar novamente':
                     self.janela.close()
                     filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
-                    filtro.dia(dia,metodo)
+                    filtro.dia(dia,metodo,notificar)
                     break
 
-    def errorCompromissoHorario(self,periodo,dia,metodo):
+    def errorCompromissoHorario(self,periodo,dia,metodo,notificar):
         if periodo == 'Ano':
             simple.theme('Reddit')
 
@@ -568,7 +625,7 @@ class TelaError:
                 if eventos == 'Tentar novamente':
                     self.janela.close()
                     filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
-                    filtro.ano()
+                    filtro.ano(notificar)
                     break
         
         if periodo == 'Mes':
@@ -588,7 +645,7 @@ class TelaError:
                 if eventos == 'Tentar novamente':
                     self.janela.close()
                     filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
-                    filtro.mes()
+                    filtro.mes(notificar)
                     break
 
         if periodo == 'Dia':
@@ -608,10 +665,10 @@ class TelaError:
                 if eventos == 'Tentar novamente':
                     self.janela.close()
                     filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
-                    filtro.dia(dia,metodo)
+                    filtro.dia(dia,metodo,notificar)
                     break
 
-    def errorPreencher(self,periodo,dia,metodo,classe,compromisso):
+    def errorPreencher(self,periodo,dia,metodo,classe,compromisso,notificar):
         simple.theme('Reddit')
 
         self.layout = [
@@ -631,11 +688,11 @@ class TelaError:
                     self.janela.close()
                     txtCompromisso = TxtCompromisso(compromisso)
                     alterar = altera(self.agendas,self.agenda,compromisso,txtCompromisso,self.layout,self.janela)
-                    alterar.alteraComp(periodo,dia,metodo)
+                    alterar.alteraComp(periodo,dia,metodo,notificar)
                 else:
                     self.janela.close()
                     alterar = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
-                    alterar.criaCompromisso(periodo,dia,metodo)
+                    alterar.criaCompromisso(periodo,dia,metodo,notificar=1)
                 break
     
     def errorPreencherCadastro(self):
@@ -675,7 +732,7 @@ class TelaError:
             if eventos == 'Tentar novamente':
                 self.janela.close()
                 alterar = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
-                alterar.criaCompromisso(periodo,dia,metodo)
+                alterar.criaCompromisso(periodo,dia,metodo,notificar=1)
                 break
     
     def errorHoraPassada(self,periodo,dia,metodo):
@@ -695,7 +752,7 @@ class TelaError:
             if eventos == 'Tentar novamente':
                 self.janela.close()
                 alterar = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
-                alterar.criaCompromisso(periodo,dia,metodo)
+                alterar.criaCompromisso(periodo,dia,metodo,notificar=1)
                 break
     
 class Cadastro:
@@ -730,8 +787,9 @@ class Cadastro:
                 else:
                     listaCompromissos = mostraCompromissos(agenda.lista_de_compromisso)
                     assist = assistente(self.agendas,agenda,listaCompromissos,layout,janela)
+                    Falar('Seja bem vindo a sua agenda')
                     janela.close()
-                    assist.telaAssistente(metodo = ' ')
+                    assist.telaAssistente(' ',notificar=0)
                     break
             if eventos == 'Novo cadastro':
                 cadastro = Cadastro(self.agendas,self.agenda,self.listaCompromissos)
@@ -744,6 +802,8 @@ class Cadastro:
             [simple.Text('Login'),simple.Input(key='login',size=(20,1))],
             [simple.Text('Senha'),simple.Input(key='senha',password_char='*',size=(20,1))],
             [simple.Text('Digite a senha novamente'),simple.Input(key='senhaRep',password_char='*',size=(20,1))],
+            [simple.Text('Seu melhor e-mail'),simple.Input(key='email',size=(20,1))],
+            [simple.Checkbox('Habilitar notificação por e-mail',key='Notificacao')],
             [simple.Button('Cadastrar'),simple.Button('Voltar')]
         ]
 
@@ -752,7 +812,7 @@ class Cadastro:
         while True:
             eventos, valores = janela.read()
 
-            analise_valores = [valores['login'],valores['senha'],valores['senhaRep']]
+            analise_valores = [valores['login'],valores['senha'],valores['senhaRep'],valores['email']]
 
             if eventos == simple.WINDOW_CLOSED:
                 break
@@ -770,10 +830,17 @@ class Cadastro:
                     break
 
                 if valores['senha'] == valores['senhaRep'] and analise == 0:
-                    agenda = criaAgenda(self.agendas,valores['login'],valores['senha'])
+                    if valores['Notificacao'] == True:
+                        notificar = 'enable'
+                    else:
+                        notificar = 'disable'
+
+                    agenda = criaAgenda(self.agendas,valores['login'],valores['senha'],valores['email'],notificar)
                     self.agendas.append(agenda)
                     login = Cadastro(self.agendas,self.agenda,self.listaCompromissos)
                     janela.close()
+                    if notificar == 'enable':
+                        Falar('Para que a função de notificação de sua agenda funcione corretamente, você precisa configurar o outlook em seu computador')
                     login.Login()
                     break
 
@@ -804,7 +871,7 @@ class alteraCompromisso:
         self.listaCompromissos = listaCompromissos
         self.agendas = agendas
     
-    def alteraCompromisso(self,periodo,dia,metodo):
+    def alteraCompromisso(self,periodo,dia,metodo,notificar):
         if periodo == 'Ano':
 
             compromissos_do_ano = self.agenda.filtroAno()
@@ -831,19 +898,19 @@ class alteraCompromisso:
                     if compromisso == -1 and txtCompromisso == -1:
                         error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                         self.janela.close()
-                        error.errorNotFind(periodo,dia,metodo)
+                        error.errorNotFind(periodo,dia,metodo,notificar)
                         break
 
                     else:
                         alteracao = altera(self.agendas,self.agenda,compromisso,txtCompromisso,self.layout,self.janela)
                         self.janela.close()
-                        alteracao.alteraComp('Ano',dia,metodo)
+                        alteracao.alteraComp('Ano',dia,metodo,notificar)
                         break
                 
                 if eventos == 'Voltar':
                     filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    filtro.ano()
+                    filtro.ano(notificar)
                     break
 
         if periodo == 'Mes':
@@ -871,19 +938,19 @@ class alteraCompromisso:
                     if compromisso == -1 and txtCompromisso == -1:
                         error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                         self.janela.close()
-                        error.errorNotFind(periodo,dia,metodo)
+                        error.errorNotFind(periodo,dia,metodo,notificar)
                         break
 
                     else:
                         alteracao = altera(self.agendas,self.agenda,compromisso,txtCompromisso,self.layout,self.janela)
                         self.janela.close()
-                        alteracao.alteraComp('Mes',dia,metodo)
+                        alteracao.alteraComp('Mes',dia,metodo,notificar)
                         break
 
                 if eventos == 'Voltar':
                     filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    filtro.mes()
+                    filtro.mes(notificar)
                     break
 
         if periodo == 'Dia':
@@ -912,22 +979,22 @@ class alteraCompromisso:
                     if compromisso == -1 and txtCompromisso == -1:
                         error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                         self.janela.close()
-                        error.errorNotFind(periodo,dia,metodo)
+                        error.errorNotFind(periodo,dia,metodo,notificar)
                         break
 
                     else:
                         alteracao = altera(self.agendas,self.agenda,compromisso,txtCompromisso,self.layout,self.janela)
                         self.janela.close()
-                        alteracao.alteraComp('Dia',dia,metodo)
+                        alteracao.alteraComp('Dia',dia,metodo,notificar)
                         break
 
                 if eventos == 'Voltar':
                     filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    filtro.dia(dia,metodo)
+                    filtro.dia(dia,metodo,notificar)
                     break
 
-    def criaCompromisso(self,periodo,dia,metodo):
+    def criaCompromisso(self,periodo,dia,metodo,notificar):
         if periodo == 'Ano':
             simple.theme('Reddit')
             self.layout = [
@@ -935,10 +1002,12 @@ class alteraCompromisso:
                 [simple.Text('Dia e mês do compromisso'),simple.Input(key='Dia e mes',size=(20,1))],
                 [simple.Text('Horário'),simple.Input(key='Horario',size=(20,1))],
                 [simple.Text('Descrição do compromisso'),simple.Input(key='Descrição',size=(20,1))],
-                [simple.Button('Criar'),simple.Button('Voltar')]
+                [simple.Button('Criar'),simple.ButtonMenu('Repetir compromisso',[['Não serve para nada'],['Repetir semanalmente','Repetir até uma data']],key='Repetir'),simple.Button('Voltar')]
             ]
 
             self.janela = simple.Window('Cria compromisso',self.layout)
+
+            flag_verificaMenu = 0
 
             while True:
                 eventos, valores = self.janela.read()
@@ -948,6 +1017,12 @@ class alteraCompromisso:
                 if eventos == simple.WINDOW_CLOSED:
                     descarregaDados(self.agendas)
                     break
+
+                if eventos == 'Repetir':
+                    if valores['Repetir'] == 'Repetir semanalmente':
+                        flag_verificaMenu = 1
+                    if valores['Repetir'] == 'Repetir até uma data':
+                        flag_verificaMenu = 2
 
                 if eventos == 'Criar':
                     ano = datetime.now()
@@ -979,30 +1054,43 @@ class alteraCompromisso:
                             possivel_horario = -1
 
                     if resultado == 0 and resposta == 0 and analise == 0 and possibilidade == 0 and possivel_horario == 0:
-                        allocaCompromisso(self.agenda,compromisso)
-                        descarregaDados(self.agendas)
-                        self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
-                        filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
-                        self.janela.close()
-                        filtro.ano()
+                        if flag_verificaMenu == 0:
+                            allocaCompromisso(self.agenda,compromisso)
+                            descarregaDados(self.agendas)
+                            self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
+                            filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
+                            self.janela.close()
+                            filtro.ano(notificar)
+
+                        if flag_verificaMenu == 1:
+                            alterar = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
+                            self.janela.close()
+                            alterar.repeteCompromisso('Semanalmente',compromisso,compromisso.data,periodo,dia,metodo,notificar=1)
+                            
+
+                        if flag_verificaMenu == 2:
+                            alterar = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
+                            self.janela.close()
+                            alterar.repeteCompromisso('Todos os dias',compromisso,compromisso.data,periodo,dia,metodo,notificar=1)
+
                         break
 
                     if resultado == -1:
                         error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                         self.janela.close()
-                        error.errorCompromissoExistente(periodo,dia,metodo)
+                        error.errorCompromissoExistente(periodo,dia,metodo,notificar)
                         break
 
                     if resposta == -1:
                         error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                         self.janela.close()
-                        error.errorCompromissoHorario(periodo,dia,metodo)
+                        error.errorCompromissoHorario(periodo,dia,metodo,notificar)
                         break
 
                     if analise == -1:
                         error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                         self.janela.close()
-                        error.errorPreencher(periodo,dia,metodo,' ',' ')
+                        error.errorPreencher(periodo,dia,metodo,' ',' ',notificar)
                         break
 
                     if possibilidade == -1:
@@ -1022,7 +1110,7 @@ class alteraCompromisso:
                     self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                     filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    filtro.ano()
+                    filtro.ano(notificar)
                     break
 
         if periodo == 'Mes':
@@ -1032,10 +1120,11 @@ class alteraCompromisso:
                 [simple.Text('Dia do compromisso'),simple.Input(key='Dia',size=(20,1))],
                 [simple.Text('Horário'),simple.Input(key='Horario',size=(20,1))],
                 [simple.Text('Descrição do compromisso'),simple.Input(key='Descrição',size=(20,1))],
-                [simple.Button('Criar'),simple.Button('Voltar')]
+                [simple.Button('Criar'),simple.ButtonMenu('Repetir compromisso',[['Não serve para nada'],['Repetir semanalmente','Repetir até uma data']],key='Repetir'),simple.Button('Voltar')]
             ]
 
             self.janela = simple.Window('Cria compromisso',self.layout)
+            flag_verificaMenu = 0
 
             while True:
                 eventos, valores = self.janela.read()
@@ -1045,6 +1134,11 @@ class alteraCompromisso:
                 if eventos == simple.WINDOW_CLOSED:
                     descarregaDados(self.agendas)
                     break
+                if eventos == 'Repetir':
+                    if valores['Repetir'] == 'Repetir semanalmente':
+                        flag_verificaMenu = 1
+                    if valores['Repetir'] == 'Repetir até uma data':
+                        flag_verificaMenu = 2
 
                 if eventos == 'Criar':
                     ano = datetime.now()
@@ -1075,30 +1169,50 @@ class alteraCompromisso:
                             possivel_horario = -1
 
                     if resultado == 0 and resposta == 0 and analise == 0 and possibilidade == 0 and possivel_horario == 0:
+                        
+                        if flag_verificaMenu == 0:
+                            allocaCompromisso(self.agenda,compromisso)
+                            descarregaDados(self.agendas)
+                            self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
+                            filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
+                            self.janela.close()
+                            filtro.mes(notificar)
+
+                        if flag_verificaMenu == 1:
+                            alterar = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
+                            self.janela.close()
+                            alterar.repeteCompromisso('Semanalmente',compromisso,compromisso.data,periodo,dia,metodo,notificar=1)
+                            
+
+                        if flag_verificaMenu == 2:
+                            alterar = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
+                            self.janela.close()
+                            alterar.repeteCompromisso('Todos os dias',compromisso,compromisso.data,periodo,dia,metodo,notificar=1)
+                        
                         allocaCompromisso(self.agenda,compromisso)
                         descarregaDados(self.agendas)
                         self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                         filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                         self.janela.close()
-                        filtro.mes()
+                        filtro.mes(notificar)
                         break
 
                     if resultado == -1:
                         error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                         self.janela.close()
-                        error.errorCompromissoExistente(periodo,dia,metodo)
+                        error.errorCompromissoExistente(periodo,dia,metodo,notificar)
                         break
 
                     if resposta == -1:
                         error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                         self.janela.close()
-                        error.errorCompromissoHorario(periodo,dia,metodo)
+                        error.errorCompromissoHorario(periodo,dia,metodo,notificar)
                         break
                         
                     if analise == -1:
                         error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                         self.janela.close()
-                        error.errorPreencher(periodo,dia,metodo,' ',' ')
+                        error.errorPreencher(periodo,dia,metodo,' ',' ',notificar)
                         break
                     
                     if possibilidade == -1:
@@ -1118,7 +1232,7 @@ class alteraCompromisso:
                     self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                     filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    filtro.mes()
+                    filtro.mes(notificar)
                     break
 
         if periodo == 'Dia':
@@ -1127,11 +1241,11 @@ class alteraCompromisso:
                 [simple.Text('Titulo do compromisso'),simple.Input(key='Titulo do compromisso',size=(20,1))],
                 [simple.Text('Horário'),simple.Input(key='Horario',size=(20,1))],
                 [simple.Text('Descrição do compromisso'),simple.Input(key='Descrição',size=(20,1))],
-                [simple.Button('Criar'),simple.Button('Voltar')]
+                [simple.Button('Criar'),simple.ButtonMenu('Repetir compromisso',[['Não serve para nada'],['Repetir semanalmente','Repetir até uma data']],key='Repetir'),simple.Button('Voltar')]
             ]
 
             self.janela = simple.Window('Cria compromisso',self.layout)
-
+            flag_verificaMenu = 0
             while True:
                 eventos, valores = self.janela.read()
 
@@ -1140,6 +1254,12 @@ class alteraCompromisso:
                 if eventos == simple.WINDOW_CLOSED:
                     descarregaDados(self.agendas)
                     break
+
+                if eventos == 'Repetir':
+                    if valores['Repetir'] == 'Repetir semanalmente':
+                        flag_verificaMenu = 1
+                    if valores['Repetir'] == 'Repetir até uma data':
+                        flag_verificaMenu = 2
 
                 if eventos == 'Criar':
                     ano = datetime.now()
@@ -1176,30 +1296,42 @@ class alteraCompromisso:
                             possivel_horario = -1
 
                     if resultado == 0 and resposta == 0 and analise == 0 and possibilidade == 0 and possivel_horario == 0:
-                        allocaCompromisso(self.agenda,compromisso)
-                        descarregaDados(self.agendas)
-                        self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
-                        filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
-                        self.janela.close()
-                        filtro.dia(dia,metodo)
+                        if flag_verificaMenu == 0:
+                            allocaCompromisso(self.agenda,compromisso)
+                            descarregaDados(self.agendas)
+                            self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
+                            filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
+                            self.janela.close()
+                            filtro.dia(dia,metodo,notificar)
+                        
+                        if flag_verificaMenu == 1:
+                            alterar = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
+                            self.janela.close()
+                            alterar.repeteCompromisso('Semanalmente',compromisso,compromisso.data,periodo,dia,metodo,notificar=1)
+                            
+
+                        if flag_verificaMenu == 2:
+                            alterar = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
+                            self.janela.close()
+                            alterar.repeteCompromisso('Todos os dias',compromisso,compromisso.data,periodo,dia,metodo,notificar=1)
                         break
 
                     if resultado == -1:
                         error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                         self.janela.close()
-                        error.errorCompromissoExistente(periodo,dia,metodo)
+                        error.errorCompromissoExistente(periodo,dia,metodo,notificar)
                         break
 
                     if resposta == -1:
                         error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                         self.janela.close()
-                        error.errorCompromissoHorario(periodo,dia,metodo)
+                        error.errorCompromissoHorario(periodo,dia,metodo,notificar)
                         break
 
                     if analise == -1:
                         error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                         self.janela.close()
-                        error.errorPreencher(periodo,dia,metodo,' ',' ')
+                        error.errorPreencher(periodo,dia,metodo,' ',' ',notificar)
                         break
 
                     if possibilidade == -1:
@@ -1220,10 +1352,43 @@ class alteraCompromisso:
                     self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                     filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    filtro.dia(dia,metodo)
+                    filtro.dia(dia,metodo,notificar)
                     break
+    
+    def repeteCompromisso(self,modo,compromisso,dataInicio,periodo,dia,metodo,notificar):
+        simple.theme('Reddit')
+        self.layout = [
+            [simple.Text('Data final'),simple.Input(key='data final',size=(20,1))],
+            [simple.Button('Feito'),simple.Button('Voltar')]
+        ]
 
-    def ExcluirCompromisso(self,periodo,dia,metodo):
+        self.janela = simple.Window('Cria compromisso',self.layout)
+
+        while True:
+            eventos, valores = self.janela.read()
+
+            if eventos == simple.WINDOW_CLOSED:
+                descarregaDados(self.agendas)
+                break
+
+            if eventos == 'Feito':
+                repeteCompromisso(self.agenda,compromisso,dataInicio,valores['data final'],modo)
+                self.janela.close()
+                filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
+                if periodo == 'Ano':
+                    filtro.ano(notificar)
+                if periodo == 'Mes':
+                    filtro.mes(notificar)
+                if periodo == 'Dia':
+                    filtro.dia(dia,metodo,notificar)
+            if eventos == 'Voltar':
+                altera = alteraCompromisso(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
+                self.janela.close()
+                altera.criaCompromisso(periodo,dia,metodo,notificar)
+            break
+
+
+    def ExcluirCompromisso(self,periodo,dia,metodo,notificar):
         if periodo == 'Ano':
             simple.theme('Reddit')
             compromissos_do_ano = self.agenda.filtroAno()
@@ -1233,7 +1398,7 @@ class alteraCompromisso:
             self.layout = [
                 [simple.Listbox(lista,size=(50,10))],
                 [simple.Text('Titulo do compromisso'),simple.Input(key='Titulo do compromisso',size=(20,1))],
-                [simple.Button('Excluir'),simple.Button('Voltar')]
+                [simple.Button('Excluir'),simple.Button('Excluir compromissos repetidos'),simple.Button('Voltar')]
             ]
 
             self.janela = simple.Window('Excluir Compromisso',self.layout)
@@ -1249,19 +1414,34 @@ class alteraCompromisso:
                     if flag == -1:
                         error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                         self.janela.close()
-                        error.errorNotFind(periodo,dia,metodo)
+                        error.errorNotFind(periodo,dia,metodo,notificar)
                     else:    
                         self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                         filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                         descarregaDados(self.agendas)
                         self.janela.close()
-                        filtro.ano()
+                        filtro.ano(notificar)
+                        break
+                
+                if eventos == 'Excluir compromissos repetidos':
+                    flag = excluiRepetidos(self.agenda,valores['Titulo do compromisso'])
+                    if flag == -1:
+                        error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
+                        self.janela.close()
+                        error.errorNotFind(periodo,dia,metodo,notificar)
+                        break
+                    else:
+                        self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
+                        filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
+                        descarregaDados(self.agendas)
+                        self.janela.close()
+                        filtro.ano(notificar)
                         break
                 
                 if eventos == 'Voltar':
                     filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    filtro.ano()
+                    filtro.ano(notificar)
 
         if periodo == 'Mes':
             simple.theme('Reddit')
@@ -1273,7 +1453,7 @@ class alteraCompromisso:
             self.layout = [
                 [simple.Listbox(lista,size=(50,10))],
                 [simple.Text('Titulo do compromisso'),simple.Input(key='Titulo do compromisso',size=(20,1))],
-                [simple.Button('Excluir'),simple.Button('Voltar')]
+                [simple.Button('Excluir'),simple.Button('Excluir compromissos repetidos'),simple.Button('Voltar')]
             ]
 
             self.janela = simple.Window('Excluir Compromisso',self.layout)
@@ -1289,19 +1469,34 @@ class alteraCompromisso:
                     if flag == -1:
                         error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                         self.janela.close()
-                        error.errorNotFind(periodo,dia,metodo)
+                        error.errorNotFind(periodo,dia,metodo,notificar)
                     else:    
                         self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                         filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                         descarregaDados(self.agendas)
                         self.janela.close()
-                        filtro.mes()
+                        filtro.mes(notificar)
                         break
                 
+                if eventos == 'Excluir compromissos repetidos':
+                    flag = excluiRepetidos(self.agenda,valores['Titulo do compromisso'])
+                    if flag == -1:
+                        error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
+                        self.janela.close()
+                        error.errorNotFind(periodo,dia,metodo,notificar)
+                        break
+                    else:
+                        self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
+                        filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
+                        descarregaDados(self.agendas)
+                        self.janela.close()
+                        filtro.ano(notificar)
+                        break
+
                 if eventos == 'Voltar':
                     filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    filtro.mes()
+                    filtro.mes(notificar)
 
         if periodo == 'Dia':
             simple.theme('Reddit')
@@ -1313,7 +1508,7 @@ class alteraCompromisso:
             self.layout = [
                 [simple.Listbox(lista,size=(50,10))],
                 [simple.Text('Titulo do compromisso'),simple.Input(key='Titulo do compromisso',size=(20,1))],
-                [simple.Button('Excluir'),simple.Button('Voltar')]
+                [simple.Button('Excluir'),simple.Button('Excluir compromissos repetidos'),simple.Button('Voltar')]
             ]
 
             self.janela = simple.Window('Excluir Compromisso',self.layout)
@@ -1329,19 +1524,35 @@ class alteraCompromisso:
                     if flag == -1:
                         error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                         self.janela.close()
-                        error.errorNotFind(periodo,dia,metodo)
+                        error.errorNotFind(periodo,dia,metodo,notificar)
                     else:    
                         self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                         filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                         descarregaDados(self.agendas)
                         self.janela.close()
-                        filtro.dia(dia,metodo)
+                        filtro.dia(dia,metodo,notificar)
+                        break
+                
+                if eventos == 'Excluir compromissos repetidos':
+                    flag = excluiRepetidos(self.agenda,valores['Titulo do compromisso'])
+                    if flag == -1:
+                        error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
+                        self.janela.close()
+                        error.errorNotFind(periodo,dia,metodo,notificar)
+                        break
+
+                    else:
+                        self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
+                        filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
+                        descarregaDados(self.agendas)
+                        self.janela.close()
+                        filtro.ano(notificar)
                         break
                 
                 if eventos == 'Voltar':
                     filtro = filtroData(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    filtro.dia(dia,metodo)
+                    filtro.dia(dia,metodo,notificar)
 
     
 
@@ -1355,7 +1566,7 @@ class altera:
         self.agenda = agenda
         self.agendas = agendas
 
-    def alteraComp(self,periodo,dia,metodo):
+    def alteraComp(self,periodo,dia,metodo,notificar):
         if periodo == 'Ano':
             simple.theme('Reddit')
             self.layout = [
@@ -1403,7 +1614,7 @@ class altera:
                     listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                     filtro = filtroData(self.agendas,self.agenda,listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    filtro.ano()
+                    filtro.ano(notificar)
                     break
 
         if periodo == 'Mes':
@@ -1453,7 +1664,7 @@ class altera:
                     listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                     filtro =filtroData(self.agendas,self.agenda,listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    filtro.mes()
+                    filtro.mes(notificar)
                     break
 
         if periodo == 'Dia':
@@ -1503,7 +1714,7 @@ class altera:
                     listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                     filtro = filtroData(self.agendas,self.agenda,listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    filtro.dia(dia,metodo)
+                    filtro.dia(dia,metodo,notificar)
                     break
 
 class alteraTitulo:
@@ -1541,20 +1752,20 @@ class alteraTitulo:
                     self.txtCompromisso = TxtCompromisso(self.compromisso)
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Ano',dia,metodo)
+                    alterar.alteraComp('Ano',dia,metodo,notificar=1)
                     break
 
                 if eventos == 'Voltar':
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Ano', dia, metodo)
+                    alterar.alteraComp('Ano', dia, metodo,notificar=1)
                     break
 
                 if analise == -1:
                     self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                     error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso)
+                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso,notificar=1)
                     break
 
         if periodo == 'Mes':
@@ -1582,20 +1793,20 @@ class alteraTitulo:
                     self.txtCompromisso = TxtCompromisso(self.compromisso)
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Mes',dia,metodo)
+                    alterar.alteraComp('Mes',dia,metodo,notificar=1)
                     break
 
                 if eventos == 'Voltar':
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Mes', dia, metodo)
+                    alterar.alteraComp('Mes', dia, metodo,notificar=1)
                     break
 
                 if analise == -1:
                     self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                     error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso)
+                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso,notificar=1)
                     break
 
         if periodo == 'Dia':
@@ -1621,19 +1832,19 @@ class alteraTitulo:
                     self.txtCompromisso = TxtCompromisso(self.compromisso)
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Dia',dia,metodo)
+                    alterar.alteraComp('Dia',dia,metodo,notificar=1)
                     break
                 if eventos == 'Voltar':
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Dia', dia, metodo)
+                    alterar.alteraComp('Dia', dia, metodo,notificar=1)
                     break
 
                 if analise == -1:
                     self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                     error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso)
+                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso,notificar=1)
                     break
 
 class alteraData:
@@ -1671,20 +1882,20 @@ class alteraData:
                     self.txtCompromisso = TxtCompromisso(self.compromisso)
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Ano',dia,metodo)
+                    alterar.alteraComp('Ano',dia,metodo,notificar=1)
                     break
 
                 if eventos == 'Voltar':
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Ano', dia, metodo)
+                    alterar.alteraComp('Ano', dia, metodo,notificar=1)
                     break
 
                 if analise == -1:
                     self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                     error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso)
+                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso,notificar=1)
                     break
         
         if periodo == 'Mes':
@@ -1710,20 +1921,20 @@ class alteraData:
                     self.txtCompromisso = TxtCompromisso(self.compromisso)
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Mes',dia,metodo)
+                    alterar.alteraComp('Mes',dia,metodo,notificar=1)
                     break
 
                 if eventos == 'Voltar':
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Mes', dia, metodo)
+                    alterar.alteraComp('Mes', dia, metodo,notificar=1)
                     break
 
                 if analise == -1:
                     self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                     error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso)
+                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso,notificar=1)
                     break
         
         if periodo == 'Dia':
@@ -1751,20 +1962,20 @@ class alteraData:
                     self.txtCompromisso = TxtCompromisso(self.compromisso)
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Dia',dia,metodo)
+                    alterar.alteraComp('Dia',dia,metodo,notificar=1)
                     break
 
                 if eventos == 'Voltar':
                     alterar = altera(self.agendas, self.agenda, self.compromisso, self.txtCompromisso, self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Dia', dia, metodo)
+                    alterar.alteraComp('Dia', dia, metodo,notificar=1)
                     break
 
                 if analise == -1:
                     self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                     error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso)
+                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso,notificar=1)
                     break
 class alteraHora:
     
@@ -1801,20 +2012,20 @@ class alteraHora:
                     self.txtCompromisso = TxtCompromisso(self.compromisso)
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Ano',dia,metodo)
+                    alterar.alteraComp('Ano',dia,metodo,notificar=1)
                     break
 
                 if eventos == 'Voltar':
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Ano', dia, metodo)
+                    alterar.alteraComp('Ano', dia, metodo,notificar=1)
                     break
 
                 if analise == -1:
                     self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                     error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso)
+                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso,notificar=1)
                     break
 
         if periodo == 'Mes':
@@ -1842,20 +2053,20 @@ class alteraHora:
                     self.txtCompromisso = TxtCompromisso(self.compromisso)
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Mes',dia,metodo)
+                    alterar.alteraComp('Mes',dia,metodo,notificar=1)
                     break
 
                 if eventos == 'Voltar':
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Mes', dia, metodo)
+                    alterar.alteraComp('Mes', dia, metodo,notificar=1)
                     break
 
                 if analise == -1:
                     self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                     error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso)
+                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso,notificar=1)
                     break
         
         if periodo == 'Dia':
@@ -1883,20 +2094,20 @@ class alteraHora:
                     self.txtCompromisso = TxtCompromisso(self.compromisso)
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Dia',dia,metodo)
+                    alterar.alteraComp('Dia',dia,metodo,notificar=1)
                     break
 
                 if eventos == 'Voltar':
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Dia', dia, metodo)
+                    alterar.alteraComp('Dia', dia, metodo,notificar=1)
                     break
 
                 if analise == -1:
                     self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                     error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso)
+                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso,notificar=1)
                     break
 
 class alteraDescricao:
@@ -1935,20 +2146,20 @@ class alteraDescricao:
                     self.txtCompromisso = TxtCompromisso(self.compromisso)
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Ano',dia,metodo)
+                    alterar.alteraComp('Ano',dia,metodo,notificar=1)
                     break
 
                 if eventos == 'Voltar':
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Ano', dia, metodo)
+                    alterar.alteraComp('Ano', dia, metodo,notificar=1)
                     break
 
                 if analise == -1:
                     self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                     error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso)
+                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso,notificar=1)
                     break
 
         if periodo == 'Mes':
@@ -1976,20 +2187,20 @@ class alteraDescricao:
                     self.txtCompromisso = TxtCompromisso(self.compromisso)
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Mes',dia,metodo)
+                    alterar.alteraComp('Mes',dia,metodo,notificar=1)
                     break
 
                 if eventos == 'Voltar':
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Mes', dia, metodo)
+                    alterar.alteraComp('Mes', dia, metodo,notificar=1)
                     break
 
                 if analise == -1:
                     self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                     error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso)
+                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso,notificar=1)
                     break
 
         if periodo == 'Dia':
@@ -2017,35 +2228,39 @@ class alteraDescricao:
                     self.txtCompromisso = TxtCompromisso(self.compromisso)
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Dia',dia,metodo)
+                    alterar.alteraComp('Dia',dia,metodo,notificar=1)
                     break
 
                 if eventos == 'Voltar':
                     alterar = altera(self.agendas,self.agenda,self.compromisso,self.txtCompromisso,self.layout,self.janela)
                     self.janela.close()
-                    alterar.alteraComp('Dia', dia, metodo)
+                    alterar.alteraComp('Dia', dia, metodo,notificar=1)
                     break
 
                 if analise == -1:
                     self.listaCompromissos = mostraCompromissos(self.agenda.lista_de_compromisso)
                     error = TelaError(self.agendas,self.agenda,self.listaCompromissos,self.layout,self.janela)
                     self.janela.close()
-                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso)
+                    error.errorPreencher(periodo,dia,metodo,classe,self.compromisso,notificar=1)
                     break
 
-def criaAgenda(agendas,login,senha): 
-    agenda = Agenda(login,senha)
+def criaAgenda(agendas,login,senha,email,notificacao): 
+    agenda = Agenda(login,senha,email,notificacao)
 
     arquivo = open("Banco de Dados.txt","a")
     lines = list()
     if len(agendas) == 0:
         lines.append(agenda.login + '\n')
-        lines.append(agenda.senha)
+        lines.append(agenda.senha + '\n')
+        lines.append(agenda.email + '\n')
+        lines.append(agenda.notificacao)
     else:
         lines.append('\n')
         lines.append('\n')
         lines.append(agenda.login + '\n')
-        lines.append(agenda.senha)
+        lines.append(agenda.senha + '\n')
+        lines.append(agenda.email + '\n')
+        lines.append(agenda.notificacao)
     arquivo.writelines(lines)
     
     return agenda
@@ -2077,10 +2292,12 @@ def bancoDeDados ():
         if h == 0:
             login = lines[position].replace('\n',"")
             senha = lines[position+1].replace('\n',"")
-            agenda = Agenda(login,senha)
+            email = lines[position+2].replace('\n',"")
+            notificacao = lines[position+3].replace('\n',"")
+            agenda = Agenda(login,senha,email,notificacao)
             agendas.append(agenda)
-            h = position + 2
-            position = position + 2
+            h = position + 4
+            position = position + 4
         else:
             for n in range(h,len(lines),4):
                 if lines[n] != '\n':
@@ -2113,6 +2330,12 @@ def descarregaDados(agendas):
             j = 0
         lines.append(agenda.login + '\n')
         lines.append(agenda.senha + '\n')
+        lines.append(agenda.email + '\n')
+        if len(agenda.lista_de_compromisso) == 0:
+            lines.append(agenda.notificacao)
+        else:
+            lines.append(agenda.notificacao + '\n')
+
         for compromissos in agenda.lista_de_compromisso:
             if j > 0:
                 lines.append('\n')
@@ -2296,3 +2519,219 @@ def diasSemana():
         dias.append(dia)
 
     return dias
+
+def mostraCompromissosEmail(lista):
+    txtCompromissos = ''
+    txtCompromissos = txtCompromissos + '<p>///////Comrpomissos para hoje/////////</p>'
+    for compromisso in lista:
+        txtCompromissos = txtCompromissos + f'<p> ---------{compromisso.titulo}---------'
+        txtCompromissos = txtCompromissos + f'<p>Data:{compromisso.data}</p>'
+        txtCompromissos = txtCompromissos + f'<p>hora:{compromisso.hora}</p>'
+        txtCompromissos = txtCompromissos + f'<p>Descricao:{compromisso.descricao}</p>'
+        txtCompromissos = txtCompromissos + '<p></p>'
+    return txtCompromissos
+
+
+def diasParaRepetir(modo,DataStart,Dataend):
+    data = datetime.now()
+    ano = data.year
+
+
+    diaStart = DataStart[0:2]
+    diaStart = int(diaStart)
+    mesStart = DataStart[3:5]
+    mesStart = int(mesStart)
+
+    diaFinal = Dataend[0:2]
+    diaFinal = int(diaFinal)
+    mesFinal = Dataend[3:5]
+    mesFinal = int(mesFinal)
+
+    datesContainer = []
+
+    aux_data = date(ano, mesStart, diaStart)
+    dia_semana = aux_data.weekday()
+
+    if modo == 'Semanalmente':
+        mesEntrada = mesStart
+        diaEntrada = diaStart
+
+        for i in range(0,mesFinal-mesStart + 1,1):
+
+            if (i + 1) >= (mesFinal - mesStart + 1):
+
+                last_date_of_month = diaFinal
+
+            else: 
+                last_date_of_month = calendar.monthrange(ano,mesEntrada)[1]
+
+            listaDias = retornaDias(modo,ano,mesEntrada,diaEntrada,dia_semana,last_date_of_month)
+            
+            datesContainer.append(listaDias)
+
+            diaEntrada = 1
+            mesEntrada = mesEntrada + 1
+        
+        return datesContainer
+    
+    if modo == 'Todos os dias':
+        mesEntrada = mesStart
+        diaEntrada = diaStart
+
+        for i in range(0,mesFinal-mesStart + 1,1):
+    
+            if (i + 1) >= (mesFinal - mesStart + 1):
+
+                last_date_of_month = diaFinal
+
+            else:
+
+                last_date_of_month = calendar.monthrange(ano,mesEntrada)[1]
+
+            listaDias = retornaDias(modo,ano,mesEntrada,diaEntrada,dia_semana,last_date_of_month)
+            
+            datesContainer.append(listaDias)
+
+            diaEntrada = 1
+            mesEntrada = mesEntrada + 1
+        
+
+        return datesContainer
+
+def retornaDias(modo,ano,mes,diaEntrada,dayWeek,last_date_of_month):
+    if modo == 'Semanalmente':
+        listaDias = list()
+
+        for j in range(diaEntrada,last_date_of_month + 1,1):
+            data = date(ano, mes, j)
+            indice_da_semana = data.weekday()
+            if indice_da_semana == dayWeek:
+                listaDias.append(j)
+        return listaDias
+
+    if modo == 'Todos os dias':
+        listaDias = list()
+
+        for j in range(diaEntrada,last_date_of_month + 1,1):
+            listaDias.append(j)
+        return listaDias
+
+def repeteCompromisso(agenda,compromisso,dataStart,dataEnd,modo):
+    lista_dias_meses = diasParaRepetir(modo,dataStart,dataEnd)
+    mes = int(dataStart[3:5])
+    data = compromisso.data
+    titulo = compromisso.titulo
+    hora = compromisso.hora
+    descricao = compromisso.descricao
+    for i in range(len(lista_dias_meses)):
+        lista_aux = lista_dias_meses[i]
+        for dia in lista_aux:
+            compromisso_aux = Compromisso(titulo,data,hora,descricao)
+            compromisso_aux.alteraDia(dia)
+            compromisso_aux.alteraMes(mes)
+            allocaCompromisso(agenda,compromisso_aux)
+        mes = mes + 1
+
+def excluiRepetidos(agenda,titulo):
+    seguro = 0
+    for compromisso in agenda.lista_de_compromisso:
+        if compromisso.titulo == titulo:
+            seguro = 1
+        
+    for i in range(len(agenda.lista_de_compromisso)):
+        j = deletaCompromisso(agenda,titulo)
+    
+    if seguro == 1 and j == -1:
+        j = 0
+        
+    return j
+
+def compromissosProximaSemana(agenda):
+    dias = ['Segunda','Terça','Quarta','Quinta','Sexta','Sábado','Domingo']
+    diaSemana,listaDias = diasProximaSemana()
+    txtProximaSemana = ''
+    for i in range(7):
+        txtCompromissos = ''
+        lista = agenda.filtroDiaSemana(listaDias[i])
+        if len(lista) > 0:
+            txtCompromissos = txtCompromissos + f'<p>//////////{dias[i]}///////////</p>'
+            for compromisso in lista:
+                txtCompromissos = txtCompromissos + f'<p> ---------{compromisso.titulo}---------'
+                txtCompromissos = txtCompromissos + f'<p>Data:{compromisso.data}</p>'
+                txtCompromissos = txtCompromissos + f'<p>hora:{compromisso.hora}</p>'
+                txtCompromissos = txtCompromissos + f'<p>Descricao:{compromisso.descricao}</p>'
+                txtCompromissos = txtCompromissos + '<p></p>'
+            txtProximaSemana = txtProximaSemana + txtCompromissos
+    return txtProximaSemana
+
+def diasProximaSemana():
+    data = datetime.now()
+    diaSemana = data.weekday()
+    dia = data.day + 7
+
+    dias = list()
+
+    if diaSemana == 0:
+        dias.append(dia)
+        dias.append(dia + 1)
+        dias.append(dia + 2)
+        dias.append(dia + 3)
+        dias.append(dia + 4)
+        dias.append(dia + 5)
+        dias.append(dia + 6)
+
+    if diaSemana == 1:
+        dias.append(dia - 1)
+        dias.append(dia)
+        dias.append(dia + 1)
+        dias.append(dia + 2)
+        dias.append(dia + 3)
+        dias.append(dia + 4)
+        dias.append(dia + 5)
+
+    if diaSemana == 2:
+        dias.append(dia - 2)
+        dias.append(dia - 1)
+        dias.append(dia)
+        dias.append(dia + 1)
+        dias.append(dia + 2)
+        dias.append(dia + 3)
+        dias.append(dia + 4)
+
+    if diaSemana == 3:
+        dias.append(dia - 3)
+        dias.append(dia - 2)
+        dias.append(dia - 1)
+        dias.append(dia)
+        dias.append(dia + 1)
+        dias.append(dia + 2)
+        dias.append(dia + 3)
+
+    if diaSemana == 4:
+        dias.append(dia - 4)
+        dias.append(dia - 3)
+        dias.append(dia - 2)
+        dias.append(dia - 1)
+        dias.append(dia)
+        dias.append(dia + 1)
+        dias.append(dia + 2)
+
+    if diaSemana == 5:
+        dias.append(dia - 5)
+        dias.append(dia - 4)
+        dias.append(dia - 3)
+        dias.append(dia - 2)
+        dias.append(dia - 1)
+        dias.append(dia)
+        dias.append(dia + 1)
+
+    if diaSemana == 6:
+        dias.append(dia - 6)
+        dias.append(dia - 5)
+        dias.append(dia - 4)
+        dias.append(dia - 3)
+        dias.append(dia - 2)
+        dias.append(dia - 1)
+        dias.append(dia)
+
+    return diaSemana,dias
